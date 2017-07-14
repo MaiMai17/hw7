@@ -10,12 +10,13 @@ import webapp2
 # Reads json description of the board and provides simple interface.
 class Game:
 	# Takes json or a board directly.
-	def __init__(self, body=None, board=None):
+	def __init__(self, body = None, board = None):
                 if body:
 		        game = json.loads(body)
                         self._board = game["board"]
                 else:
                         self._board = board
+
 
 	# Returns piece on the board.
 	# 0 for no pieces, 1 for player 1, 2 for player 2.
@@ -33,13 +34,60 @@ class Game:
 	#   "As": player number
 	def ValidMoves(self):
                 moves = []
-                for y in xrange(1,9):
-                        for x in xrange(1,9):
+                scores = []
+                for y in xrange(1, 9):
+                        for x in xrange(1, 9):
                                 move = {"Where": [x,y],
                                         "As": self.Next()}
-                                if self.NextBoardPosition(move):
+                                board_data = self.NextBoardPosition(move)
+                                if board_data:
+                                        s = self.EvalScore(board_data, move)
+                                        board_score = {"Where" :[x,y], "Score": s}
                                         moves.append(move)
-                return moves
+                                        scores.append(board_score)
+                best = self.SelectBest(scores)
+                return (moves, best)
+
+        def EvalScore(self, board_data, move):
+                board = vars(board_data)
+                next_board = board['_board']['Pieces']
+                next_as = board['_board']['Next']
+                scoreBoard_opening = [[30, -12, 0, -1, -1, 0, -12, 30],
+								[-12, -15, -3, -3, -3, -3, -15, -12],
+					            [0, -3, 0, -1, -1, 0, -3, 0],
+					            [-1, -3, -1, -1, -1, -1, -3, -1],
+					            [-1, -3, -1, -1, -1, -1, -3, -1],
+					           	[0, -3, 0, -1, -1, 0, -3, 0],
+					           	[-12, -15, -3, -3, -3, -3, -15, -12],
+					           	[30, -12, 0, -1, -1, 0, -12, 30]]
+                score = {"total": 0, "next_step": 0}
+
+                for y in xrange(0, 8):
+                        for x in xrange(0, 8):
+                                if next_board[y][x] == next_as:
+                                        score["total"] += scoreBoard_opening[y][x]
+                                elif next_board[y][x] == 0:
+                                        score["total"] = score["total"]
+                                else:
+                                        score["total"] -= scoreBoard_opening[y][x]
+
+                for y in xrange(0, 8):
+                        for x in xrange(0, 8):
+                                if move["Where"] == [x+1, y+1]:
+                                        score["next_step"] = scoreBoard_opening[y][x]
+
+                return score
+
+        def SelectBest(self, moves_score):
+                if moves_score:
+                        moves_score = sorted(moves_score,
+                                             key = lambda x: x["Score"]["next_step"],
+                                             reverse = True)
+                        best = moves_score[0]
+                        return best
+                else:
+                        return {"Where": None}
+
 
 	# Helper function of NextBoardPosition.  It looks towards
 	# (delta_x, delta_y) direction for one of our own pieces and
@@ -80,7 +128,7 @@ class Game:
                 pieces = new_board["Pieces"]
 
 		if not (self.__UpdateBoardDirection(pieces, x, y, 1, 0)
-                        | self.__UpdateBoardDirection(pieces, x, y, 0, 1)
+                | self.__UpdateBoardDirection(pieces, x, y, 0, 1)
 		        | self.__UpdateBoardDirection(pieces, x, y, -1, 0)
 		        | self.__UpdateBoardDirection(pieces, x, y, 0, -1)
 		        | self.__UpdateBoardDirection(pieces, x, y, 1, 1)
@@ -89,15 +137,15 @@ class Game:
 		        | self.__UpdateBoardDirection(pieces, x, y, -1, -1)):
                         # Nothing was captured. Move is invalid.
                         return None
-                
+
                 # Something was captured. Move is valid.
                 new_board["Next"] = 3 - self.Next()
 		return Game(board=new_board)
 
+
 # Returns piece on the board.
 # 0 for no pieces, 1 for player 1, 2 for player 2.
-# None for coordinate out of scope.
-#
+# None for coordinate out of scope
 # Pos and SetPos takes care of converting coordinate from 1-indexed to
 # 0-indexed that is actually used in the underlying arrays.
 def Pos(board, x, y):
@@ -125,45 +173,59 @@ def PrettyMove(move):
 	return '%s%d' % (chr(ord('A') + m[0] - 1), m[1])
 
 class MainHandler(webapp2.RequestHandler):
-    # Handling GET request, just for debugging purposes.
-    # If you open this handler directly, it will show you the
-    # HTML form here and let you copy-paste some game's JSON
-    # here for testing.
-    def get(self):
-        if not self.request.get('json'):
-          self.response.write("""
-<body><form method=get>
-Paste JSON here:<p/><textarea name=json cols=80 rows=24></textarea>
-<p/><input type=submit>
-</form>
-</body>
-""")
-          return
-        else:
-          g = Game(self.request.get('json'))
-          self.pickMove(g)
+        # Handling GET request, just for debugging purposes.
+        # If you open this handler directly, it will show you the
+        # HTML form here and let you copy-paste some game's JSON
+        # here for testing.
+        def get(self):
+                if not self.request.get('json'):
+                        self.response.write("""
+                        <body><form method=get>
+                        Paste JSON here:<p/><textarea name=json cols=80 rows=24>
+                        </textarea>
+                        <p/><input type=submit>
+                        </form>
+                        </body>
+                        """)
+                        return
+                else:
+                        g = Game(self.request.get('json'))
+                        self.pickMove(g)
 
-    def post(self):
-    	# Reads JSON representation of the board and store as the object.
-    	g = Game(self.request.body)
-        # Do the picking of a move and print the result.
-        self.pickMove(g)
+        def post(self):
+    	        # Reads JSON representation of the board and store as the object.
+    	        g = Game(self.request.body)
+                # Do the picking of a move and print the result.
+                self.pickMove(g)
+
+        def pickMove(self, g):
+    	        # Gets all valid moves.
+    	        valid_moves = g.ValidMoves()[0]
+                best_move = g.ValidMoves()[1]
+    	        if len(valid_moves) == 0:
+    		        # Passes if no valid moves.
+    		        self.response.write("PASS")
+    	        else:
+    		        # Chooses a valid move randomly if available.
+                        # TO STEP STUDENTS:
+                        # You'll probably want to change how this works,
+                        # to do something more clever than just
+                        # picking a random move.
+
+                        move = self.choice(valid_moves, best_move)
+                        print(move)
+    		        self.response.write(PrettyMove(move))
+
+        def choice(self, valid_moves, best):
+                if valid_moves:
+                        for i in valid_moves:
+                                if i["Where"] == best["Where"]:
+                                        return i
+                else:
+                        return {"Where": None}
 
 
-    def pickMove(self, g):
-    	# Gets all valid moves.
-    	valid_moves = g.ValidMoves()
-    	if len(valid_moves) == 0:
-    		# Passes if no valid moves.
-    		self.response.write("PASS")
-    	else:
-    		# Chooses a valid move randomly if available.
-                # TO STEP STUDENTS:
-                # You'll probably want to change how this works, to do something
-                # more clever than just picking a random move.
-	    	move = random.choice(valid_moves)
-    		self.response.write(PrettyMove(move))
 
 app = webapp2.WSGIApplication([
-    ('/', MainHandler)
+        ('/', MainHandler)
 ], debug=True)
